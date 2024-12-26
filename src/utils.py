@@ -11,7 +11,14 @@ logging.basicConfig(
 
 
 def load_transactions(file_path):
-    """Загрузить транзакции из Excel файла."""
+    """Загрузить транзакции из Excel файла.
+
+    Args:
+        file_path (str): Путь к Excel файлу с транзакциями.
+
+    Returns:
+        pd.DataFrame: Датафрейм с загруженными транзакциями.
+    """
     logging.info(f"Loading transactions from {file_path}")
     try:
         transactions = pd.read_excel(file_path)
@@ -23,14 +30,28 @@ def load_transactions(file_path):
 
 
 def calculate_cashback(amount):
-    """Вычислить кешбэк на основе суммы."""
+    """Вычислить кешбэк на основе суммы.
+
+    Args:
+        amount (float): Сумма транзакции.
+
+    Returns:
+        float: Рассчитанный кешбэк.
+    """
     cashback = amount * 0.01  # 1% кешбэк
     logging.debug(f"Calculated cashback: {cashback} for amount: {amount}")
     return cashback
 
 
 def get_greeting(current_time):
-    """Получить приветствие в зависимости от времени суток."""
+    """Получить приветствие в зависимости от времени суток.
+
+    Args:
+        current_time (datetime): Текущая дата и время.
+
+    Returns:
+        str: Приветствие в зависимости от времени суток.
+    """
     hour = current_time.hour
     if hour < 6:
         greeting = "Доброй ночи"
@@ -40,5 +61,6 @@ def get_greeting(current_time):
         greeting = "Добрый день"
     else:
         greeting = "Добрый вечер"
+
     logging.info(f"Greeting generated: {greeting}")
     return greeting
