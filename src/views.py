@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
-from src.utils import load_transactions, calculate_cashback, get_greeting
 import pandas as pd
+from src.utils import load_transactions, calculate_cashback, get_greeting
 import logging
 
 # Настройка логирования для views
@@ -13,6 +13,15 @@ logging.basicConfig(
 
 
 def generate_json_response(date_str, file_path):
+    """Генерирует JSON-ответ на основе входящей даты и файла с транзакциями.
+
+    Args:
+        date_str (str): Дата и время в формате 'YYYY-MM-DD HH:MM:SS'.
+        file_path (str): Путь к файлу с транзакциями.
+
+    Returns:
+        str: JSON-строка с ответом.
+    """
     current_time = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
     greeting = get_greeting(current_time)
 
