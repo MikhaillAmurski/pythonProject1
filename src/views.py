@@ -1,59 +1,46 @@
-import json
-from datetime import datetime
-import pandas as pd
-from src.utils import load_transactions, calculate_cashback, get_greeting
 import logging
-
-# Настройка логирования для views
-logging.basicConfig(
-    filename='logs/views.log',
-    level=logging.INFO,
-    format='%(asctime)s:%(levelname)s:%(message)s'
+from pathlib import Path
+import json
+from src.utils import (
+    get_data,
+    reader_transaction_excel,
+    get_top_transactions,
+    filter_transactions_by_date,
+    get_card_expenses,
+    get_currency_rates,
+    get_stock_price,
+    get_greeting,
 )
 
+ROOT_PATH = Path(__file__).resolve().parent.parent
 
-def generate_json_response(date_str, file_path):
-    """Генерирует JSON-ответ на основе входящей даты и файла с транзакциями.
 
-    Args:
-        date_str (str): Дата и время в формате 'YYYY-MM-DD HH:MM:SS'.
-        file_path (str): Путь к файлу с транзакциями.
+logger = logging.getLogger("logs")
+logger.setLevel(logging.INFO)
+file_handler = logging.FileHandler("..\\logs\\views.log", encoding="utf-8")
+file_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s: %(message)s")
+file_handler.setFormatter(file_formatter)
+logger.addHandler(file_handler)
 
-    Returns:
-        str: JSON-строка с ответом.
-    """
-    current_time = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
-    greeting = get_greeting(current_time)
 
-    transactions = load_transactions(file_path)
-    today = pd.Timestamp(current_time)
+def main(df_transactions, date, user_currencies, user_stocks):
+    "Главная функция, делающая вывод на главную страницу"
+    greeting = get_greeting()
+    transactions = filter_transactions_by_date(df_transactions, date)
+    cards = get_card_expenses(df_transactions)
+    top_trans = get_top_transactions(df_transactions)
+    currency_rates = get_currency_rates(user_currencies)
+    stock_prices = get_stock_price(user_stocks)
 
-    # Фильтруем транзакции по дате
-    start_date = today.replace(day=1)
-    filtered_transactions = transactions[
-        (pd.to_datetime(transactions['Дата операции']) >= start_date) &
-        (pd.to_datetime(transactions['Дата операции']) <= today)
-        ]
-
-    cards_summary = filtered_transactions.groupby('Номер карты').agg(
-        total_spent=('Сумма операции', 'sum'),
-        cashback=('Сумма операции', lambda x: calculate_cashback(x.sum()))
-    ).reset_index()
-
-    top_transactions = filtered_transactions.nlargest(5, 'Сумма платежа')[
-        ['Дата операции', 'Сумма платежа', 'Категория', 'Описание']].to_dict(orient='records')
-
-    currency_rates = [{"currency": "USD", "rate": 73.21}, {"currency": "EUR", "rate": 87.08}]
-    stock_prices = [{"stock": "AAPL", "price": 150.12}, {"stock": "AMZN", "price": 3173.18}]
-
-    response = {
-        "greeting": greeting,
-        "cards": [{"last_digits": str(card)[-4:], "total_spent": total, "cashback": cash} for card, total, cash in
-                  zip(cards_summary['Номер карты'], cards_summary['total_spent'], cards_summary['cashback'])],
-        "top_transactions": top_transactions,
-        "currency_rates": currency_rates,
-        "stock_prices": stock_prices
-    }
-
-    logging.info("JSON response generated successfully.")
-    return json.dumps(response, ensure_ascii=False)
+    date_json = json.dumps(
+        {
+            "greeting": greeting,
+            "cards": cards,
+            "top_transactions": top_trans,
+            "currency_rates": currency_rates,
+            "stock_prices": stock_prices,
+        },
+        indent=4,
+        ensure_ascii=False,
+    )
+    return date_json

@@ -1,23 +1,18 @@
-import sys
-from src.views import generate_json_response
+from pathlib import Path
+from src.config import file_path
+from src.utils import reader_transaction_excel, get_user_settings
+from src.views import main
 
-
-def main():
-    """Главная функция для запуска приложения."""
-    if len(sys.argv) != 3:
-        print("Usage: python main.py <date> <path_to_excel>")
-        sys.exit(1)
-
-    date_input = sys.argv[1]  # Дата и время в формате 'YYYY-MM-DD HH:MM:SS'
-    path_to_excel = sys.argv[2]  # Путь к Excel файлу с транзакциями
-
-    try:
-        json_response = generate_json_response(date_input, path_to_excel)
-        print(json_response)
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        sys.exit(1)
+ROOT_PATH = Path(__file__).resolve().parent.parent
 
 
 if __name__ == "__main__":
-    main()
+    df_transactions = reader_transaction_excel(file_path)
+    date = "29.07.2019 22:06:27"
+
+    user_currencies, user_stocks = get_user_settings(str(ROOT_PATH) + "/user_setting.json")
+
+    date_json = main(df_transactions, date, user_currencies, user_stocks)
+
+    print(date_json)
+    print(file_path)

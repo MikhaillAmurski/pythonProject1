@@ -1,94 +1,65 @@
-import pandas as pd
+import datetime
+import datetime as dt
 import logging
-from datetime import datetime
+from pathlib import Path
+import pandas as pd
+from src.config import file_path
+from src.utils import get_data, reader_transaction_excel
+from functools import wraps
+from typing import Any, Callable
 
-# Настройка логирования для reports
-logging.basicConfig(
-    filename='logs/reports.log',
-    level=logging.INFO,
-    format='%(asctime)s:%(levelname)s:%(message)s'
-)
+logger = logging.getLogger("logs")
+logger.setLevel(logging.INFO)
+file_handler = logging.FileHandler("..\\logs\\reports.log", encoding="utf-8")
+file_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s: %(message)s")
+file_handler.setFormatter(file_formatter)
+logger.addHandler(file_handler)
 
 
-def spending_by_category(transactions: pd.DataFrame, category: str, date: str = None) -> pd.DataFrame:
-    """Возвращает траты по заданной категории за последние три месяца.
+ROOT_PATH = Path(__file__).resolve().parent.parent
 
-    Args:
-        transactions (pd.DataFrame): Датафрейм с транзакциями.
-        category (str): Название категории для анализа.
-        date (str, optional): Дата, относительно которой идет анализ (формат 'YYYY-MM-DD'). Если не указана, берется текущая дата.
 
-    Returns:
-        pd.DataFrame: Датафрейм с суммами расходов по указанной категории.
-    """
+def log(filename: Any = None) -> Callable:
+    """декоратор,который логирует вызов функции и ее результат в файл или в консоль"""
+
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                result = func(*args, **kwargs)
+                log_messege = "my_function ok\n"
+            except Exception as e:
+                result = None
+                log_messege = f"my_function error: {e}. Inputs: {args}, {kwargs} \n"
+            if filename:
+                with open(filename, "a", encoding="utf-8") as file:
+                    file.write(log_messege)
+            else:
+                print(log_messege)
+            return result
+
+        return wrapper
+
+    return decorator
+
+
+def spending_by_category(df_transactions: pd.DataFrame, category: str, date: [str] = None) -> pd.DataFrame:
+    """Функция возвращает траты по заданной категории за последние три месяца (от переданной даты)"""
     if date is None:
-        date = datetime.now().strftime('%Y-%m-%d')
-    end_date = pd.to_datetime(date)
-    start_date = end_date - pd.DateOffset(months=3)
-
-    filtered_transactions = transactions[
-        (pd.to_datetime(transactions['Дата операции']) >= start_date) &
-        (pd.to_datetime(transactions['Дата операции']) <= end_date) &
-        (transactions['Категория'] == category)
-        ]
-
-    logging.info(f"Spending calculated for category: {category} from {start_date.date()} to {end_date.date()}.")
-    return filtered_transactions.groupby('Дата операции').agg(total_spent=('Сумма операции', 'sum')).reset_index()
+        fin_data = dt.datetime.now()
+    else:
+        fin_data = get_data(date)
+    start_data = fin_data.replace(hour=0, minute=0, second=0, microsecond=0) - datetime.timedelta(days=91)
+    transactions_by_category = df_transactions.loc[
+        (pd.to_datetime(df_transactions["Дата операции"], dayfirst=True) <= fin_data)
+        & (pd.to_datetime(df_transactions["Дата операции"], dayfirst=True) >= start_data)
+        & (df_transactions["Категория"] == category)
+    ]
+    return transactions_by_category
 
 
-def spending_by_weekday(transactions: pd.DataFrame, date: str = None) -> pd.DataFrame:
-    """Возвращает средние траты в каждый день недели за последние три месяца.
-
-    Args:
-        transactions (pd.DataFrame): Датафрейм с транзакциями.
-        date (str, optional): Дата, относительно которой идет анализ (формат 'YYYY-MM-DD'). Если не указана, берется текущая дата.
-
-    Returns:
-        pd.DataFrame: Датафрейм со средними расходами по дням недели.
-    """
-    if date is None:
-        date = datetime.now().strftime('%Y-%m-%d')
-    end_date = pd.to_datetime(date)
-    start_date = end_date - pd.DateOffset(months=3)
-
-    filtered_transactions = transactions[
-        (pd.to_datetime(transactions['Дата операции']) >= start_date) &
-        (pd.to_datetime(transactions['Дата операции']) <= end_date)
-        ]
-
-    filtered_transactions['weekday'] = filtered_transactions['Дата операции'].dt.day_name()
-    weekly_spending = filtered_transactions.groupby('weekday').agg(total_spent=('Сумма операции', 'mean')).reset_index()
-
-    logging.info(f"Weekly spending calculated from {start_date.date()} to {end_date.date()}.")
-    return weekly_spending
-
-
-def spending_by_workday(transactions: pd.DataFrame, date: str = None) -> pd.DataFrame:
-    """Возвращает средние траты в рабочий и выходной день за последние три месяца.
-
-    Args:
-        transactions (pd.DataFrame): Датафрейм с транзакциями.
-        date (str, optional): Дата, относительно которой идет анализ (формат 'YYYY-MM-DD'). Если не указана, берется текущая дата.
-
-    Returns:
-        pd.DataFrame: Датафрейм со средними расходами в рабочие и выходные дни.
-    """
-    if date is None:
-        date = datetime.now().strftime('%Y-%m-%d')
-    end_date = pd.to_datetime(date)
-    start_date = end_date - pd.DateOffset(months=3)
-
-    filtered_transactions = transactions[
-        (pd.to_datetime(transactions['Дата операции']) >= start_date) &
-        (pd.to_datetime(transactions['Дата операции']) <= end_date)
-        ]
-
-    filtered_transactions['is_weekend'] = filtered_transactions['Дата операции'].dt.dayofweek >= 5
-    workday_spending = filtered_transactions.groupby('is_weekend').agg(
-        total_spent=('Сумма операции', 'mean')).reset_index()
-
-    workday_spending['Day Type'] = workday_spending['is_weekend'].map({True: 'Выходной', False: 'Рабочий'})
-    result = workday_spending[['Day Type', 'total_spent']]
-
-    logging.info(f"Spending by workdays and weekends calculated from {start_date.date()} to {end_date.date()}.")
-    return result
+if __name__ == "__main__":
+    result = spending_by_category(
+        reader_transaction_excel(str(ROOT_PATH) + file_path), "Аптеки", "26.07.2019 20:58:55"
+    )
+    print(result)
