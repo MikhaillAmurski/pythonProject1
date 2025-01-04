@@ -62,6 +62,6 @@ def spending_by_category(df_transactions: pd.DataFrame, category: str, date: [st
 
 if __name__ == "__main__":
     result = spending_by_category(
-        reader_transaction_excel(str(ROOT_PATH) + file_path), "Аптеки", "26.07.2019 20:58:55"
+        reader_transaction_excel("../data/operations.xlsx"), "Наличные", "26.07.2019 20:58:55"
     )
     print(result)
