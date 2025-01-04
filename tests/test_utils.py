@@ -1,48 +1,294 @@
+import os
+
 import pytest
+import datetime
 import pandas as pd
 import json
-from unittest.mock import patch, MagicMock
-from src.views import generate_json_response
+from unittest.mock import patch, mock_open
+from pathlib import Path
+from datetime import datetime
+
+import requests
+
+# РРјРїРѕСЂС‚РёСЂСѓРµРј С„СѓРЅРєС†РёРё РёР· С‚РµСЃС‚РёСЂСѓРµРјРѕРіРѕ РјРѕРґСѓР»СЏ
+from src.utils import (
+    get_data,
+    reader_transaction_excel,
+    get_dict_transaction,
+    get_user_settings,
+    get_currency_rates,
+    get_stock_price,
+    get_top_transactions,
+    get_card_expenses,
+    filter_transactions_by_date,
+    get_greeting,
+)
+
+
+def test_get_data_valid():
+    date_str = "01.01.2024 10:00:00"
+    expected_date = datetime(2024, 1, 1, 10, 0, 0)
+    assert get_data(date_str) == expected_date
+
+
+def test_get_data_invalid_format():
+    with pytest.raises(ValueError):
+        get_data("invalid date format")
 
 
 @pytest.fixture
-def mock_transactions():
-    """Фикстура с поддельными транзакциями."""
-    return pd.DataFrame({
-        'Дата операции': pd.to_datetime(['2023-12-01', '2023-12-05', '2023-12-07']),
-        'Номер карты': ['1234', '5678', '1234'],
-        'Сумма операции': [2000, 3000, 1500],
-        'Сумма платежа': [2000, 3000, 1500],
-        'Категория': ['Еда', 'Транспорт', 'Еда'],
-        'Описание': ['Оплата', 'Перевод', 'Оплата']
-    })
+def sample_excel_data():
+    df = pd.DataFrame(
+        {
+            "Р”Р°С‚Р° РѕРїРµСЂР°С†РёРё": ["01.01.2024 10:00:00", "02.01.2024 12:00:00"],
+            "РЎСѓРјРјР° РїР»Р°С‚РµР¶Р°": [100, -50],
+            "РќРѕРјРµСЂ РєР°СЂС‚С‹": [1234, 5678],
+        }
+    )
+    return df
 
 
-@patch('src.views.load_transactions')
-@patch('src.views.calculate_cashback')
-@patch('src.views.get_greeting')
-def test_generate_json_response(mock_get_greeting, mock_calculate_cashback, mock_load_transactions, mock_transactions):
-    """Тест функции generate_json_response с использованием mock."""
+@patch("pandas.read_excel")
+def test_reader_transaction_excel_success(mock_read_excel, sample_excel_data):
+    mock_read_excel.return_value = sample_excel_data
+    df = reader_transaction_excel("test.xlsx")
+    assert df.equals(sample_excel_data)
 
-    # Настройка моков
-    mock_load_transactions.return_value = mock_transactions
-    mock_calculate_cashback.return_value = 15.0
-    mock_get_greeting.return_value = "Добрый день"
 
-    date_input = "2023-12-07 15:30:00"
-    path_to_excel = "data/operations.xlsx"
+@patch("pandas.read_excel", side_effect=FileNotFoundError)
+def test_reader_transaction_excel_file_not_found(mock_read_excel):
+    with pytest.raises(FileNotFoundError):
+        reader_transaction_excel("nonexistent_file.xlsx")
 
-    json_response = generate_json_response(date_input, path_to_excel)
 
-    # Проверяем содержимое JSON-ответа
-    response = json.loads(json_response)
-    assert response['greeting'] == "Добрый день"
-    assert len(response['cards']) == 2
-    assert response['cards'][0]['last_digits'] == "1234"
-    assert response['cards'][0]['total_spent'] == 3500  # 2000 + 1500
-    assert response['cards'][0]['cashback'] == 15.0
+@patch("pandas.read_excel", side_effect=pd.errors.EmptyDataError)
+def test_reader_transaction_excel_empty(mock_read_excel):
+    with pytest.raises(pd.errors.EmptyDataError):
+        reader_transaction_excel("empty_file.xlsx")
 
-    # Проверяем вызовы моков
-    mock_load_transactions.assert_called_once_with(path_to_excel)
-    mock_calculate_cashback.assert_called_once()
-    mock_get_greeting.assert_called_once_with(pd.to_datetime(date_input))
+
+@patch("src.utils.pd.read_excel", side_effect=FileNotFoundError)
+def test_get_dict_transaction_file_not_found(mock_read_excel):
+    with pytest.raises(FileNotFoundError):
+        get_dict_transaction("test.xlsx")
+
+
+# РўРµСЃС‚С‹ РґР»СЏ С„СѓРЅРєС†РёРё get_user_settings
+
+def test_get_user_settings_success(tmp_path):
+    settings_file = tmp_path / "settings.json"
+    settings_data = {"user_currencies": ["USD", "EUR"], "user_stocks": ["AAPL", "MSFT"]}
+    with open(settings_file, "w", encoding="utf-8") as f:
+        json.dump(settings_data, f)
+    currencies, stocks = get_user_settings(str(settings_file))
+    assert currencies == ["USD", "EUR"]
+    assert stocks == ["AAPL", "MSFT"]
+
+
+def test_get_user_settings_file_not_found():
+    currencies, stocks = get_user_settings("nonexistent_file.json")
+    assert currencies == []
+    assert stocks == []
+
+
+def test_get_user_settings_invalid_json(tmp_path):
+    settings_file = tmp_path / "settings.json"
+    with open(settings_file, "w", encoding="utf-8") as f:
+        f.write("invalid json")
+    currencies, stocks = get_user_settings(str(settings_file))
+    assert currencies == []
+    assert stocks == []
+
+
+def test_get_user_settings_missing_key(tmp_path):
+    settings_file = tmp_path / "settings.json"
+    settings_data = {"user_currencies": ["USD", "EUR"]}
+    with open(settings_file, "w", encoding="utf-8") as f:
+        json.dump(settings_data, f)
+    currencies, stocks = get_user_settings(str(settings_file))
+    assert currencies == []
+    assert stocks == []
+
+
+# РўРµСЃС‚С‹ РґР»СЏ С„СѓРЅРєС†РёРё get_currency_rates
+
+@patch.dict(os.environ, {"API_KEY": "test_api_key"})  # Р—Р°РјРµРЅСЏРµРј API_KEY
+@patch("requests.get")
+def test_get_currency_rates_success(mock_get):
+    mock_response = requests.Response()
+    mock_response.status_code = 200
+    mock_response._content = b'{"quotes": {"USDRUB": 100, "USDEUR": 0.9}}'
+    mock_response.json = lambda: {"quotes": {"USDRUB": 100, "USDEUR": 0.9}}
+    mock_get.return_value = mock_response
+    rates = get_currency_rates(["USD", "EUR"])
+    assert rates == [{"currency": "USD", "rate": 100.0}, {"currency": "EUR", "rate": 111.11}]
+
+
+@patch.dict(os.environ, {"API_KEY": "test_api_key"})
+@patch("requests.get")
+def test_get_currency_rates_api_error(mock_get):
+    mock_get.side_effect = requests.exceptions.RequestException("Test error")
+    rates = get_currency_rates(["USD", "EUR"])
+    assert rates is None
+
+
+@patch.dict(os.environ, {"API_KEY": "test_api_key"})
+@patch("requests.get")
+def test_get_currency_rates_missing_data(mock_get):
+    mock_response = requests.Response()
+    mock_response.status_code = 200
+    mock_response._content = b'{"quotes": {"USDEUR": 0.9}}'
+    mock_response.json = lambda: {"quotes": {"USDEUR": 0.9}}
+    mock_get.return_value = mock_response
+    rates = get_currency_rates(["USD", "EUR"])
+    assert rates is None
+
+
+@patch.dict(os.environ, {}, clear=True) #РџСЂРѕРІРµСЂРєР° РѕС‚СЃСѓС‚СЃС‚РІРёСЏ API РєР»СЋС‡Р°
+def test_get_currency_rates_no_api_key():
+    rates = get_currency_rates(["USD", "EUR"])
+    assert rates is None
+
+
+# РўРµСЃС‚С‹ РґР»СЏ С„СѓРЅРєС†РёРё get_stock_price (Р°РЅР°Р»РѕРіРёС‡РЅРѕ РїСЂРµРґС‹РґСѓС‰РёРј, РёСЃРїРѕР»СЊР·СѓСЏ mock)
+@patch.dict(os.environ, {"API_KEY_STOCK": "test_api_key"})
+@patch("requests.get")
+def test_get_stock_price_success(mock_get):
+    mock_response = requests.Response()
+    mock_response.status_code = 200
+    mock_response._content = b'{"Global Quote": {"05. price": "150.00"}}'
+    mock_response.json = lambda: {"Global Quote": {"05. price": "150.00"}}
+    mock_get.return_value = mock_response
+    prices = get_stock_price(["AAPL"])
+    assert prices == [{"stock": "AAPL", "price": 150.0}]
+
+
+@patch.dict(os.environ, {"API_KEY_STOCK": "test_api_key"})
+@patch("requests.get")
+def test_get_stock_price_api_error(mock_get):
+    mock_get.side_effect = requests.exceptions.RequestException("Test error")
+    prices = get_stock_price(["AAPL"])
+    assert prices == []
+
+
+@patch.dict(os.environ, {"API_KEY_STOCK": "test_api_key"})
+@patch("requests.get")
+def test_get_stock_price_invalid_data(mock_get):
+    mock_response = requests.Response()
+    mock_response.status_code = 200
+    mock_response._content = b'{"Global Quote": {}}'
+    mock_response.json = lambda: {"Global Quote": {}}
+    mock_get.return_value = mock_response
+    prices = get_stock_price(["AAPL"])
+    assert prices == []
+
+
+@patch.dict(os.environ, {}, clear=True)
+def test_get_stock_price_no_api_key():
+    prices = get_stock_price(["AAPL"])
+    assert prices == []
+
+
+#РўРµСЃС‚С‹ РґР»СЏ С„СѓРЅРєС†РёРё get_top_transactions
+@pytest.fixture
+def sample_transactions_df():
+    data = {
+        "Р”Р°С‚Р° РѕРїРµСЂР°С†РёРё": ["01.01.2024 10:00:00", "02.01.2024 10:00:00", "03.01.2024 10:00:00", "04.01.2024 10:00:00", "05.01.2024 10:00:00", "06.01.2024 10:00:00"],
+        "РЎСѓРјРјР° РїР»Р°С‚РµР¶Р°": [100, 50, 200, 150, 250, 300],
+        "РљР°С‚РµРіРѕСЂРёСЏ": ["РџСЂРѕРґСѓРєС‚С‹", "РўСЂР°РЅСЃРїРѕСЂС‚", "Р Р°Р·РІР»РµС‡РµРЅРёСЏ", "РџСЂРѕРґСѓРєС‚С‹", "РўСЂР°РЅСЃРїРѕСЂС‚", "Р Р°Р·РІР»РµС‡РµРЅРёСЏ"],
+        "РћРїРёСЃР°РЅРёРµ": ["РњР°РіР°Р·РёРЅ", "РўР°РєСЃРё", "РљРёРЅРѕ", "РљР°С„Рµ", "РњРµС‚СЂРѕ", "РљРѕРЅС†РµСЂС‚"],
+    }
+    df = pd.DataFrame(data)
+    return df
+
+
+def test_get_top_transactions_success(sample_transactions_df):
+    top_transactions = get_top_transactions(sample_transactions_df)
+    assert len(top_transactions) == 5
+    assert top_transactions[0]["amount"] == 50
+
+
+def test_get_top_transactions_empty_df():
+    top_transactions = get_top_transactions(pd.DataFrame())
+    assert top_transactions == []
+
+
+#РўРµСЃС‚С‹ РґР»СЏ С„СѓРЅРєС†РёРё get_card_expenses
+@pytest.fixture
+def sample_card_expenses_df():
+    data = {
+        "РќРѕРјРµСЂ РєР°СЂС‚С‹": [1234, 1234, 5678, 5678, 1234],
+        "РЎСѓРјРјР° РїР»Р°С‚РµР¶Р°": [-100, -50, -200, -100, -30],
+    }
+    df = pd.DataFrame(data)
+    return df
+
+
+def test_get_card_expenses_success(sample_card_expenses_df):
+    expenses = get_card_expenses(sample_card_expenses_df)
+    assert len(expenses) == 2
+    assert expenses[0]["total_spent"] == 180
+    assert expenses[0]["cashback"] == 1.8
+
+
+def test_get_card_expenses_empty_df():
+    expenses = get_card_expenses(pd.DataFrame())
+    assert expenses == []
+
+
+#РўРµСЃС‚С‹ РґР»СЏ С„СѓРЅРєС†РёРё filter_transactions_by_date
+@pytest.fixture
+def sample_filter_transactions_df():
+    data = {
+        "Р”Р°С‚Р° РѕРїРµСЂР°С†РёРё": ["01.01.2024 10:00:00", "15.01.2024 10:00:00", "01.02.2024 10:00:00", "18.02.2024 10:00:00"],
+        "РЎСѓРјРјР° РїР»Р°С‚РµР¶Р°": [100, 50, 200, 150],
+    }
+    df = pd.DataFrame(data)
+    return df
+
+
+def test_filter_transactions_by_date_success(sample_filter_transactions_df):
+    filtered_df = filter_transactions_by_date(sample_filter_transactions_df, "15.01.2024 10:00:00")
+    assert len(filtered_df) == 2
+
+
+def test_filter_transactions_by_date_empty_df():
+    filtered_df = filter_transactions_by_date(pd.DataFrame(), "15.01.2024 10:00:00")
+    assert filtered_df is None
+
+
+def test_get_greeting_morning():
+    with patch('datetime.datetime') as mock_datetime:
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 10, 0, 0)
+        assert get_greeting() == "Р”РѕР±СЂРѕРµ СѓС‚СЂРѕ"
+
+
+def test_get_greeting_afternoon():
+    with patch('datetime.datetime') as mock_datetime:
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 14, 0, 0)
+        assert get_greeting() == "Р”РѕР±СЂС‹Р№ РґРµРЅСЊ"
+
+
+def test_get_greeting_evening():
+    with patch('datetime.datetime') as mock_datetime:
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 19, 0, 0)
+        assert get_greeting() == "Р”РѕР±СЂС‹Р№ РІРµС‡РµСЂ"
+
+
+def test_get_greeting_night():
+    with patch('datetime.datetime') as mock_datetime:
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 23, 0, 0)
+        assert get_greeting() == "Р”РѕР±СЂРѕР№ РЅРѕС‡Рё"
+
+
+def test_get_greeting_midnight():
+    with patch('datetime.datetime') as mock_datetime:
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 0, 0, 0)
+        assert get_greeting() == "Р”РѕР±СЂРѕР№ РЅРѕС‡Рё"
+
+
+def test_get_greeting_early_morning():
+    with patch('datetime.datetime') as mock_datetime:
+        mock_datetime.now.return_value = datetime(2024,1,1,4,0,0)
+        assert get_greeting() == "Р”РѕР±СЂРѕРµ СѓС‚СЂРѕ"
+

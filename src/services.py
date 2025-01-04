@@ -1,13 +1,17 @@
 import json
 import logging
+from pathlib import Path
+
 import pytest
 import re
 from src.utils import get_dict_transaction
 
 
-logger = logging.getLogger("logs")
+logger = logging.getLogger("services")
 logger.setLevel(logging.INFO)
-file_handler = logging.FileHandler("..\\logs\\services.log", encoding="utf-8")
+log_dir = Path("./logs")
+log_dir.mkdir(exist_ok=True, parents=True)
+file_handler = logging.FileHandler(log_dir.joinpath("services.log"), encoding="utf-8")
 file_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s: %(message)s")
 file_handler.setFormatter(file_formatter)
 logger.addHandler(file_handler)

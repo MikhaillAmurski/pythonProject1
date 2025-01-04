@@ -8,9 +8,11 @@ from src.utils import get_data, reader_transaction_excel
 from functools import wraps
 from typing import Any, Callable
 
-logger = logging.getLogger("logs")
+logger = logging.getLogger("reports")
 logger.setLevel(logging.INFO)
-file_handler = logging.FileHandler("..\\logs\\reports.log", encoding="utf-8")
+log_dir = Path("./logs")
+log_dir.mkdir(exist_ok=True, parents=True)
+file_handler = logging.FileHandler(log_dir.joinpath("reports.log"), encoding="utf-8")
 file_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s: %(message)s")
 file_handler.setFormatter(file_formatter)
 logger.addHandler(file_handler)

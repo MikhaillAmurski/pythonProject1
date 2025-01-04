@@ -15,9 +15,11 @@ load_dotenv("..\\.env")
 
 ROOT_PATH = Path(__file__).resolve().parent.parent
 
-logger = logging.getLogger("logs")
+logger = logging.getLogger("utils")
 logger.setLevel(logging.INFO)
-file_handler = logging.FileHandler("..\\logs\\utils.log", encoding="utf-8")
+log_dir = Path("./logs")
+log_dir.mkdir(exist_ok=True, parents=True)
+file_handler = logging.FileHandler(log_dir.joinpath("utils.log"), encoding="utf-8")
 file_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s: %(message)s")
 file_handler.setFormatter(file_formatter)
 logger.addHandler(file_handler)
